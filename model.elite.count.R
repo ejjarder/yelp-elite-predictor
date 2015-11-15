@@ -53,3 +53,10 @@ get.models <- function(training.set) {
     get.models.per.response(model.definition, possible.predictors,
                             user.training.set)
 }
+
+get.top.predictors <- function(model) {
+    # get all coefficients except intercept
+    model.coefficients <- coefficients(model)[-1]
+    names(head(model.coefficients[order(abs(model.coefficients),
+                                        decreasing = TRUE)], 3))
+}

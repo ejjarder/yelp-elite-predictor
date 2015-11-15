@@ -1,0 +1,65 @@
+```{r setup, include = FALSE}
+source('elite.count.R')
+```
+
+Identifying Yelp Elite Users Based on User Data
+========================================================
+author: Eugene Jarder
+date: 10 November 2015
+transition: none
+font-import: https://fonts.googleapis.com/css?family=Roboto
+font-family: 'Roboto'
+
+Introduction
+========================================================
+**What does it take to be elite?**
+What factors have a high effect on whether a user becomes elite or not?
+- Given the user dataset, can we identify which users are elite?
+    - Furthermore, can we identify how many years a user has been elite?
+```{r count.vs.stars, echo = FALSE, fig.align = 'center', fig.height = 3}
+library(ggplot2)
+ggplot(user.training.set, aes(average_stars, elite.count)) +
+    geom_point(alpha = 0.3)
+```
+- **average_stars** is a possible predictor.
+
+Data and Methods Used
+========================================================
+
+- Data used: yelp_academic_dataset_user.json
+    - parse.user.data.R - json to csv
+        - flattened **votes** and **compliments**
+        - **friend.count** - number of friends
+        - **elite.count** - number of years a user has been elite
+        - **elite.friend.years** - total years friends have been elite
+    - model.elite.count.R - additional data
+        - **days.yelping** - *today()* minus **yelping_since**
+        - **was.elite** - elite for at least one year
+- *quasi-* models since `r sprintf('%.0f%%', PERCENT.TRAINING * 100)` of data
+is zero
+
+Results
+========================================================
+- Number of Years using *quasipoisson* model
+    - Training Set RMSE =
+`r training.set.predictions$elite.count$quasipoisson$validation`
+    - Testing Set RMSE =
+`r testing.set.predictions$elite.count$quasipoisson$validation`
+    - Top Coefficients:  
+`r get.top.predictors(models$elite.count$quasipoisson$finalModel)`
+- Was Elite using *quasibinomial* model
+    - Training Set Accuracy =
+`r training.set.predictions$was.elite$quasibinomial$validation$overall['Accuracy']`
+    - Testing Set RMSE =
+`r testing.set.predictions$was.elite$quasibinomial$validation$overall['Accuracy']`
+    - Top Coefficients:  
+`r get.top.predictors(models$was.elite$quasibinomial$finalModel)`
+
+Discussion
+========================================================
+Conclusions
+- Review quality or **average_stars** indeed has the biggest influence if one
+person can become elite.
+- Having many likes on the profile or **compliments.profile** is a turn-off.
+- If people want you to write more or **compliments.more**, you have a high
+chance to become elite.
