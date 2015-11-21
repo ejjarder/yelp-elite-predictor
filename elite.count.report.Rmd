@@ -1,0 +1,223 @@
+---
+title: "Identifying Yelp Elite Users Based on User Data"
+author: "Eugene Jarder"
+date: "Sunday, November 15, 2015"
+output: pdf_document
+---
+
+```{r setup, include = FALSE, cache = TRUE}
+source('elite.count.R')
+
+convert.to.percent <- function(value) {
+    sprintf('%.2f%%', value * 100)
+}
+```
+
+# Introduction
+**What does it take to be elite?** Specifically, what does it take to be part
+of the [**Yelp Elite Squad**](http://www.yelp.com.sg/elite)? Being Elite has
+its perks, from having a shiny badge to exclusive events. But what do they
+look for in a user for that person to be accepted to this exclusive community?
+  
+This study aims to look through the Yelp User Data, and create a model that
+will identify which users are part of this community. It also tried to create
+a model that predicts the number of years a user has been elite. It can
+hopefully help users who aspire to be elite really to become one in the future.
+
+# Data and Methods
+## Yelp User Data
+The study uses the data stored in *yelp_academic_dataset_user.json*. Each line
+in the file is a **json** string containing information on the user.
+  
+Each entry contains the following fields:
+
+Field Name | Type | Description
+--- | --- | ---
+user_id | character | The unique ID used by the system to identify one user.
+yelping_since | date | The year and the month when the user joined Yelp.
+votes | numeric list | The number of votes per vote type received.
+review_count | numeric | The number of reviews written.
+name | character | The name of the user.
+fans | numeric | The number of fans of the user.
+average_stars | numeric | The average rating across all the reviews written by the user.
+type | character | The type of the data. In this case, all are users.
+friends | character list | List of friends.
+compliments | numeric list | The number of compliments per compliment type received by the user.
+elite | date list | The years the user has been Elite.
+
+### Cleaning the Data
+#### Convert to List
+  
+The data was converted from **json** to a list by parsing each line and passing
+it to the [rjson::fromJSON()](http://www.inside-r.org/packages/cran/rjson/docs/fromJSON)
+function. Each line becomes an entry in the list, with **user_id** as the name
+of each entry.
+
+#### Flatten the List
+  
+The list is then flattened to a data frame so it can be used in training
+models. Each user entry becomes a row in the data frame. For each row, the
+fields are converted with the following rules:
+
+- For non-list fields, the field is simply set to that value.
+- For **votes** and **compliments**, which are *numeric lists*, each vote or
+compliment type becomes one field in the row.
+- The **elite** field was reduced to **elite.count**, which is the number of
+years the user has been elite, which is computed by getting the length of the
+**elite** list.
+- The **friends** list was also reduced to **friend.count**, the number of
+friends the user has, which is computed by getting the length of the **friend**
+list.
+
+#### Additional Data
+  
+The following fields were added, as they seemed to be possibly interesting
+variables:
+
+- **days.yelping** - The number of days since the user started using yelp.
+Computed by [lubridate::today()](http://www.inside-r.org/packages/cran/lubridate/docs/today)
+minus **yelping_since** using [base::difftime()](https://stat.ethz.ch/R-manual/R-devel/library/base/html/difftime.html).
+- **elite.friend.years** - The total number of years the user's friends have
+been elite.
+- **was.elite** - Whether the user has ever been elite or not. This is added
+after the csv has been loaded.
+  
+In addition, not all users have all compliment types. These have been filled
+with NA values in the csv, and set to zero after loading the csv.
+  
+#### Save to CSV
+  
+As the author has mentioned above, the data is being loaded from a csv.
+Conversion from **json** to data frame takes a lot of time. To avoid
+regenerating all the data, it was saved to a csv file. The advantage of doing
+this is that a csv file can immediately be loaded into a data frame using
+[utils::read.csv()](https://stat.ethz.ch/R-manual/R-devel/library/utils/html/read.table.html).
+
+### Training and Test Sets
+`r sprintf('%.0f%%', PERCENT.TRAINING * 100)` of the data was put into the
+training set. The rest of the data is the test set.
+
+## Exploratory Analysis
+
+### Non-predictors
+Not all data are fit to become predictors. For example, the **type** field
+contains the same value for all the entries. The **user_id** and **name** just
+identify the user entry. These should not have any effect on whether the user
+can be elite or not. **yelping_since** has also been discarded in favor of
+**days.yelping**. Since we want to predict **was.elite** and **elite.count**,
+these fields are also going to be ignored as predictors.
+
+### Possible Models
+**elite.count** is a count. To model this data, the author used a *poisson*
+*Generalized Linear Model*.
+  
+**was.elite** is a boolean. To model this data, the author used a *binomial*
+*Generalized Linear Model*.
+
+### Overdispersion
+The data was diagnosed to be **overdispersed**. The variance of the data is
+much larger than the mean. This was determined by using the
+[AER::dispersiontest()](http://www.inside-r.org/packages/cran/AER/docs/dispersiontest)
+function on tempoary glms.
+
+```{r dispersion.test, echo = FALSE, message = FALSE, warning = FALSE}
+library(AER)
+
+column.names <- names(user.training.set)
+possible.predictors.bool <- !(column.names %in% non.predictors)
+possible.predictors <- column.names[possible.predictors.bool]
+
+test.poisson <- glm(elite.count ~ .,
+                    data = user.training.set[c('elite.count',
+                                               possible.predictors)],
+                    family = 'poisson')
+dispersiontest(test.poisson)
+```
+
+The dispersion comes from the fact that only
+`r convert.to.percent(sum(user.training.set$elite.count > 0) / nrow(user.training.set))`
+of the users in the training set are elite. The following histogram shows
+the imbalance of the distribution of users who have never been elite.
+
+```{r elitehistogram, echo = FALSE, message = FALSE, warning = FALSE}
+library(ggplot2)
+ggplot(user.training.set, aes(elite.count)) + geom_bar()
+```
+
+### Final Models
+Since data is overdispersed, the best way to model them would be using the
+*quasi*-family of GLMs.
+  
+For **elite.count** is a count, the *quasipoisson Generalized Linear Model* was
+used.
+  
+For **was.elite** is a count, the *quasibinomial Generalized Linear Model* was
+used.
+
+### Training the Model
+
+The model was trained using **10-fold cross validation**, the default
+cross-validation setting.
+
+# Results
+
+## Quasipoisson Model for Predicting Elite Count
+Training Set RMSE:
+**`r training.set.predictions$elite.count$quasipoisson$validation`**.
+  
+Testing Set RMSE:
+**`r testing.set.predictions$elite.count$quasipoisson$validation`**.
+  
+The model's non-intercept coefficients, ordered by coefficient estimate:
+```{r poissonsummary, echo = FALSE}
+get.non.intercept.coefficients(models$elite.count$quasipoisson$finalModel)
+```
+
+## Quasibinomial Model for Predicting Elite Status
+Training Set Confusion Matrix:
+```{r conftrain, echo = FALSE}
+training.set.predictions$was.elite$quasibinomial$validation$table
+```
+Training Set Accuracy:
+**`r convert.to.percent(training.set.predictions$was.elite$quasibinomial$validation$overall['Accuracy'])`.**
+  
+Testing Set Confusion Matrix:
+```{r conftest, echo = FALSE}
+testing.set.predictions$was.elite$quasibinomial$validation$table
+```
+Testing Set Accuracy:
+**`r convert.to.percent(testing.set.predictions$was.elite$quasibinomial$validation$overall['Accuracy'])`.**
+  
+The model's non-intercept coefficients, ordered by coefficient estimate:
+```{r binomialsummary, echo = FALSE}
+get.non.intercept.coefficients(models$was.elite$quasibinomial$finalModel)
+```
+
+# Discussion
+
+There is a
+**`r convert.to.percent(testing.set.predictions$was.elite$quasibinomial$validation$overall['Accuracy'])`**
+accuracy in identifying users who are elite on the test set. The author
+concludes that it is possible to predict who are members of the
+**Yelp Elite Squad** using user information. The coefficients also have very
+low p-values, which makes them very significant, compared to the hypothesis
+that each coefficient is zero.
+  
+It is hard to predict the exact amount number of years a user has been elite.
+The coefficients of the model have very high p-values values, which means they
+are not that significant, compared to the hypothesis that each coefficient is
+zero.
+  
+The same predictors came up at the top three for both models, although smaller
+for the quasipoisson model. **average_stars** or the average rating being given
+by the user, has the highest influence on the Elite status. Also, if other
+users tend to ask one user to write more reviews, as seen on
+**compliments.more**, that user also has a high chance to become elite. On the
+other hand, having many likes on one's profile, tracked through
+**compliment.likes** seem to be a turn off, as it has a negative correlation
+with being elite.
+  
+To summarize, if you want to be a member of **Yelp's Elite Squad**, give higher
+scores. Still, ensure your review's quality, so people will ask you for an
+encore. And finally, do not just go around looking for profile likes. This,
+hopefully, will make you an Elite user, at least for a year.

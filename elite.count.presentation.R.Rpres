@@ -12,54 +12,43 @@ font-family: 'Roboto'
 
 Introduction
 ========================================================
-**What does it take to be elite?**
-What factors have a high effect on whether a user becomes elite or not?
-- Given the user dataset, can we identify which users are elite?
-    - Furthermore, can we identify how many years a user has been elite?
-```{r count.vs.stars, echo = FALSE, fig.align = 'center', fig.height = 3}
-library(ggplot2)
-ggplot(user.training.set, aes(average_stars, elite.count)) +
-    geom_point(alpha = 0.3)
-```
-- **average_stars** is a possible predictor.
+**What does it take to be Elite?**
+What factors have a high effect on whether a user becomes Elite or not?
+- Given the user dataset, can we identify which users are Elite?
+    - Furthermore, can we identify how many years a user has been Elite?
 
 Data and Methods Used
 ========================================================
 
 - Data used: yelp_academic_dataset_user.json
-    - parse.user.data.R - json to csv
-        - flattened **votes** and **compliments**
-        - **friend.count** - number of friends
-        - **elite.count** - number of years a user has been elite
-        - **elite.friend.years** - total years friends have been elite
-    - model.elite.count.R - additional data
-        - **days.yelping** - *today()* minus **yelping_since**
-        - **was.elite** - elite for at least one year
-- *quasi-* models since `r sprintf('%.0f%%', PERCENT.TRAINING * 100)` of data
-is zero
+- *quasi-* models since the data is overdispersed
+```{r count.vs.stars, echo = FALSE, fig.align = 'center', fig.height = 3}
+ggplot(user.training.set, aes(elite.count)) + geom_bar()
+```
+    - *quasipoisson* for predicting number of years Elite
+    - *quasibinomial* for predicting whether a user is Elite
 
 Results
 ========================================================
 - Number of Years using *quasipoisson* model
-    - Training Set RMSE =
-`r training.set.predictions$elite.count$quasipoisson$validation`
-    - Testing Set RMSE =
-`r testing.set.predictions$elite.count$quasipoisson$validation`
-    - Top Coefficients:  
-`r get.top.predictors(models$elite.count$quasipoisson$finalModel)`
-- Was Elite using *quasibinomial* model
-    - Training Set Accuracy =
-`r training.set.predictions$was.elite$quasibinomial$validation$overall['Accuracy']`
-    - Testing Set RMSE =
-`r testing.set.predictions$was.elite$quasibinomial$validation$overall['Accuracy']`
-    - Top Coefficients:  
-`r get.top.predictors(models$was.elite$quasibinomial$finalModel)`
+    - Top 3 Predictors:
+```{r poissonsummary, echo = FALSE}
+head(get.non.intercept.coefficients(models$elite.count$quasipoisson$finalModel), 3)[, c('Estimate', 'Pr(>|t|)')]
+```
+- Was Elite using *quasibinomial* model    
+    - Top 3 Predictors:
+```{r binomialsummary, echo = FALSE}
+head(get.non.intercept.coefficients(models$was.elite$quasibinomial$finalModel), 3)[, c('Estimate', 'Pr(>|t|)')]
+```
 
 Discussion
 ========================================================
 Conclusions
-- Review quality or **average_stars** indeed has the biggest influence if one
-person can become elite.
-- Having many likes on the profile or **compliments.profile** is a turn-off.
-- If people want you to write more or **compliments.more**, you have a high
-chance to become elite.
+- Low p-values for predicting whether elite
+    - Highly probable to identify elite users using user data
+- High p-values for predicting number of years
+    - Highly improbable to get number of years
+- Giving high scores, or **average_stars**, and people asking for more reviews,
+or **compliments.more**, are good criteria for eliteness
+- Just having profile likes, or **compliments.likes** is a bad criteria for
+eliteness.

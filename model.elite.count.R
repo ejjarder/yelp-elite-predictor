@@ -54,9 +54,10 @@ get.models <- function(training.set) {
                             user.training.set)
 }
 
-get.top.predictors <- function(model) {
+get.non.intercept.coefficients <- function(model) {
     # get all coefficients except intercept
-    model.coefficients <- coefficients(model)[-1]
-    names(head(model.coefficients[order(abs(model.coefficients),
-                                        decreasing = TRUE)], 3))
+    model.coefficients <- summary(model)$coef[-1, ]
+    estimate.order <- order(abs(model.coefficients[, 'Estimate']),
+                            decreasing = TRUE)
+    model.coefficients[estimate.order, ]
 }
